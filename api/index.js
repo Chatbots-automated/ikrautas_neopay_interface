@@ -140,4 +140,248 @@ const toInput = el('emailTo');
 const subjInput = el('emailSubject');
 const msgInput = el('emailMessage');
 
-function showOK(where, msg){ where.innerHTML = '<div class="ok">
+function showOK(where, msg){ where.innerHTML = '<div class="ok">'+msg+'</div>'; }
+function showERR(where, msg){ where.innerHTML = '<div class="err">'+(msg||'Error')+'</div>'; }
+
+async function call(action, payload){
+  const res = await fetch(location.pathname, {
+    method:'POST',
+    headers:{'Content-Type':'application/json'},
+    body: JSON.stringify({ action, ...payload })
+  });
+  const data = await res.json().catch(()=> ({}));
+  if(!res.ok) throw new Error(data.error || 'Request failed');
+  return data;
+}
+
+el('btnDecode').addEventListener('click', async () => {
+  outDecode.innerHTML = '';
+  outAction.innerHTML = '';
+  try{
+    const link = linkInput.value.trim();
+    if(!link) throw new Error('Please paste a NeoPay link.');
+    const data = await call('decode', { link });
+
+    const ex = data.extracted || {};
+    // inject link into message template
+    const tmpl = document.createElement('div');
+    tmpl.innerHTML = msgInput.value;
+    const a = tmpl.querySelector('#msgLink');
+    if (a) { a.textContent = link; a.href = link; }
+    msgInput.value = tmpl.innerHTML;
+
+    outDecode.innerHTML = \`
+      <div class="grid mt">
+        <div class="field"><div class="label">Type</div><div class="value">\${ex.type ?? '—'}</div></div>
+        <div class="field"><div class="label">Amount</div><div class="value">\${(ex.amount ?? '—')} \${(ex.currency ?? '')}</div></div>
+        <div class="field"><div class="label">Transaction ID</div><div class="value">\${ex.transactionId ?? '—'}</div></div>
+        <div class="field"><div class="label">Lead ID (internalId)</div><div class="value">\${ex.internalId ?? '—'}</div></div>
+        <div class="field"><div class="label">Single Project Item ID</div><div class="value">\${ex.singleProjectItemId ?? '—'}</div></div>
+        <div class="field full"><div class="label">Payment purpose</div><div class="value">\${ex.paymentPurpose ?? '—'}</div></div>
+      </div>
+      <div class="chip mt">Decoded OK</div>
+    \`;
+  }catch(e){
+    showERR(outDecode, e.message);
+  }
+});
+
+el('btnUpdateAdv').addEventListener('click', async () => {
+  outAction.innerHTML = '';
+  try{
+    const itemId = spIdInput.value.trim();
+    if(!itemId) throw new Error('Provide Single Project Item ID.');
+    const amtRaw = advInput.value.trim();
+    if(!amtRaw) throw new Error('Provide advance amount.');
+    const amount = Math.round(parseFloat(amtRaw)*100)/100;
+    if(Number.isNaN(amount)) throw new Error('Advance amount is not a number.');
+
+    await call('updateAdvance', { singleProjectItemId: itemId, amount });
+    showOK(outAction, 'Advance amount updated in Monday.');
+  }catch(e){
+    showERR(outAction, e.message);
+  }
+});
+
+el('btnSend').addEventListener('click', async () => {
+  outAction.innerHTML = '';
+  try{
+    const link = linkInput.value.trim();
+    if(!link) throw new Error('Paste the NeoPay link and click Decode first.');
+    const to = toInput.value.trim();
+    if(!to) throw new Error('Provide customer email.');
+    const subject = subjInput.value.trim() || 'Mokėjimo nuoroda';
+    const message = msgInput.value.trim();
+    const itemId = spIdInput.value.trim() || null;
+    const override = advInput.value.trim();
+    const advanceOverride = override ? Math.round(parseFloat(override)*100)/100 : null;
+
+    const data = await call('sendWebhook', {
+      link, to, subject, message,
+      singleProjectItemId: itemId,
+      advanceOverride
+    });
+    showOK(outAction, 'Sent to n8n webhook.');
+  }catch(e){
+    showERR(outAction, e.message);
+  }
+});
+</script>
+</body>
+</html>`;
+}
+
+// ---------- helpers ----------
+function decodeNeoPayUrl(link) {
+  const qIndex = link.indexOf("?");
+  if (qIndex === -1) throw new Error("URL does not contain a token query part.");
+  const token = link.slice(qIndex + 1).trim();
+  if (!token || token.split(".").length < 3) throw new Error("Token not found or invalid JWT format.");
+  const [, payloadB64] = token.split(".");
+  const payloadJson = Buffer.from(payloadB64.replace(/-/g, "+").replace(/_/g, "/"), "base64").toString("utf8");
+  const payload = JSON.parse(payloadJson);
+  const extracted = {
+    type: payload.type || undefined,
+    amount: payload.amount ? Number(payload.amount) : undefined,
+    currency: payload.currency || undefined,
+    transactionId: payload.transactionId || undefined,
+    internalId: payload.internalId || undefined, // leadId
+    singleProjectItemId: payload.singleProjectItemId || undefined,
+    paymentPurpose: payload.paymentPurpose || undefined
+  };
+  return { token, payload, extracted };
+}
+
+async function mondayUpdateCols(itemId, values) {
+  const token = process.env.MONDAY_API_TOKEN;
+  if (!token) throw new Error("MONDAY_API_TOKEN is not set.");
+  const mutation = `
+    mutation Update($boardId: Int!, $itemId: Int!, $cols: JSON!) {
+      change_multiple_column_values(board_id: $boardId, item_id: $itemId, column_values: $cols) { id }
+    }
+  `;
+  const body = {
+    query: mutation,
+    variables: { boardId: BOARD_ID, itemId: Number(itemId), cols: JSON.stringify(values) }
+  };
+  const resp = await fetch("https://api.monday.com/v2", {
+    method: "POST",
+    headers: { "Content-Type": "application/json", Authorization: process.env.MONDAY_API_TOKEN },
+    body: JSON.stringify(body)
+  });
+  const json = await resp.json();
+  if (!resp.ok || json.errors) {
+    throw new Error("Monday update failed: " + (json.errors?.map(e => e.message).join("; ") || resp.statusText));
+  }
+}
+
+async function updateAdvanceAmountOnly(itemId, amount) {
+  const rounded = Math.round(Number(amount) * 100) / 100;
+  if (Number.isNaN(rounded)) throw new Error("Invalid amount.");
+  await mondayUpdateCols(itemId, { [COL_ADV_AMOUNT]: rounded });
+  return true;
+}
+
+// ---------- handler ----------
+module.exports = async (req, res) => {
+  // CORS
+  res.setHeader("Access-Control-Allow-Origin", "*");
+  res.setHeader("Access-Control-Allow-Methods", "GET, POST, OPTIONS");
+  res.setHeader("Access-Control-Allow-Headers", "Content-Type, Authorization");
+  if (req.method === "OPTIONS") return res.status(200).end();
+
+  if (req.method === "GET") {
+    res.setHeader("Content-Type", "text/html; charset=utf-8");
+    return res.status(200).send(htmlPage());
+  }
+
+  if (req.method !== "POST") {
+    return res.status(405).json({ error: "Method not allowed" });
+  }
+
+  try {
+    const chunks = [];
+    for await (const c of req) chunks.push(c);
+    const raw = Buffer.concat(chunks).toString("utf8");
+    const body = raw ? JSON.parse(raw) : {};
+    const { action } = body || {};
+    if (!action) throw new Error("Missing 'action'.");
+
+    // 1) Decode
+    if (action === "decode") {
+      const { link } = body;
+      if (!link) throw new Error("Missing 'link'.");
+      const { extracted } = decodeNeoPayUrl(link);
+      return res.status(200).json({ extracted });
+    }
+
+    // 2) Update advance in Monday
+    if (action === "updateAdvance") {
+      const { singleProjectItemId, amount } = body;
+      if (!singleProjectItemId) throw new Error("Missing 'singleProjectItemId'.");
+      if (typeof amount === "undefined") throw new Error("Missing 'amount'.");
+      await updateAdvanceAmountOnly(singleProjectItemId, amount);
+      return res.status(200).json({ updated: true });
+    }
+
+    // 3) Send to n8n webhook (resend email workflow)
+    if (action === "sendWebhook") {
+      const { link, to, subject, message, singleProjectItemId, advanceOverride } = body;
+      if (!link) throw new Error("Missing 'link'.");
+      if (!to) throw new Error("Missing 'to'.");
+
+      // Decode fresh to ensure payload is current
+      const { payload, extracted } = decodeNeoPayUrl(link);
+
+      // Build a rich payload with "everything"
+      const webhookPayload = {
+        event: "resend_payment_link",
+        sentAt: new Date().toISOString(),
+        link,
+        email: {
+          to,
+          subject: subject || "Mokėjimo nuoroda",
+          messageHtml: message || ""
+        },
+        extracted,         // type, amount, currency, transactionId, internalId, singleProjectItemId, paymentPurpose
+        rawPayload: payload, // original decoded payload
+        overrides: {
+          advanceAmount: (typeof advanceOverride === "number" && !Number.isNaN(advanceOverride))
+            ? Math.round(advanceOverride * 100) / 100
+            : null
+        },
+        monday: {
+          boardId: BOARD_ID,
+          singleProjectItemId: singleProjectItemId || extracted.singleProjectItemId || null,
+          columns: {
+            leadId: COL_LEAD_ID,
+            advanceLink: COL_ADV_LINK,
+            finalLink: COL_FINAL_LINK,
+            advanceAmount: COL_ADV_AMOUNT
+          }
+        },
+        meta: {
+          uiVersion: "1.0.0",
+          source: "vercel-payments-console"
+        }
+      };
+
+      const resp = await fetch("${WEBHOOK_URL}", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(webhookPayload)
+      });
+
+      if (!resp.ok) {
+        const txt = await resp.text().catch(() => "");
+        throw new Error("n8n webhook error: " + resp.status + " " + txt);
+      }
+
+      return res.status(200).json({ sent: true });
+    }
+
+    return res.status(400).json({ error: "Unknown action." });
+  } catch (e) {
+    return res.status(400).json({ error: e.message || "Bad request" });
+  }
+};
