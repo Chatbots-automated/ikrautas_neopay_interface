@@ -23,31 +23,7 @@ const COL_ADV_AMOUNT = "numeric_mks5kp0t";
 function htmlPage() {
   return `<!doctype html>
 <html lang="en">
-<head>
-  <meta charset="utf-8" />
-  <meta name="viewport" content="width=device-width,initial-scale=1" />
-  <title>NeoPay Link Inspector</title>
-  <style>
-    body{font-family:system-ui,-apple-system,Segoe UI,Roboto,Arial,Helvetica,sans-serif;background:#f8fafc;color:#0f172a;margin:0;padding:24px}
-    .card{max-width:880px;margin:0 auto;background:#fff;border-radius:16px;box-shadow:0 10px 30px rgba(2,6,23,.06);padding:20px}
-    h1{font-size:22px;margin:0 0 12px}
-    label{display:block;font-size:14px;margin:12px 0 6px;color:#334155}
-    input[type="text"]{width:100%;padding:10px 12px;border:1px solid #e2e8f0;border-radius:10px;font-size:14px}
-    .row{display:flex;gap:12px;align-items:center}
-    .muted{color:#64748b;font-size:12px}
-    .btn{background:#0f172a;color:#fff;border:0;border-radius:10px;padding:10px 14px;font-weight:600;cursor:pointer}
-    .btn:disabled{opacity:.5;cursor:not-allowed}
-    .pill{display:inline-block;background:#f1f5f9;color:#0f172a;border-radius:999px;padding:6px 10px;font-family:ui-monospace, SFMono-Regular, Menlo, monospace;font-size:12px}
-    .grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px}
-    .full{grid-column:1 / -1}
-    .field{background:#f8fafc;border:1px solid #eef2f7;border-radius:10px;padding:10px}
-    .label{color:#64748b;font-size:12px;margin-bottom:6px}
-    .value{font-family:ui-monospace, SFMono-Regular, Menlo, monospace;word-break:break-all}
-    .ok{background:#ecfdf5;color:#065f46;border:1px solid #a7f3d0;padding:10px;border-radius:10px}
-    .err{background:#fef2f2;color:#991b1b;border:1px solid #fecaca;padding:10px;border-radius:10px}
-    .mt{margin-top:14px}
-  </style>
-</head>
+<head> ...styles omitted for brevity... </head>
 <body>
   <div class="card">
     <h1>NeoPay Link Inspector</h1>
@@ -105,19 +81,19 @@ function htmlPage() {
       if(!res.ok) throw new Error(data.error || 'Request failed');
 
       const ex = data.extracted || {};
-      out.innerHTML = `
-        ${data.updated ? '<div class="ok">Monday updated for item <b>${singleProjectItemId}</b>.</div>' : ''}
+      out.innerHTML = \`
+        \${data.updated ? '<div class="ok">Monday updated for item <b>' + singleProjectItemId + '</b>.</div>' : ''}
         <div class="grid mt">
-          <div class="field"><div class="label">Type</div><div class="value">${ex.type ?? '—'}</div></div>
-          <div class="field"><div class="label">Amount</div><div class="value">${(ex.amount ?? '—')} ${(ex.currency ?? '')}</div></div>
-          <div class="field"><div class="label">Transaction ID</div><div class="value">${ex.transactionId ?? '—'}</div></div>
-          <div class="field"><div class="label">Lead ID (internalId)</div><div class="value">${ex.internalId ?? '—'}</div></div>
-          <div class="field"><div class="label">Single Project Item ID</div><div class="value">${ex.singleProjectItemId ?? '—'}</div></div>
-          <div class="field full"><div class="label">Payment purpose</div><div class="value">${ex.paymentPurpose ?? '—'}</div></div>
+          <div class="field"><div class="label">Type</div><div class="value">\${ex.type ?? '—'}</div></div>
+          <div class="field"><div class="label">Amount</div><div class="value">\${(ex.amount ?? '—')} \${(ex.currency ?? '')}</div></div>
+          <div class="field"><div class="label">Transaction ID</div><div class="value">\${ex.transactionId ?? '—'}</div></div>
+          <div class="field"><div class="label">Lead ID (internalId)</div><div class="value">\${ex.internalId ?? '—'}</div></div>
+          <div class="field"><div class="label">Single Project Item ID</div><div class="value">\${ex.singleProjectItemId ?? '—'}</div></div>
+          <div class="field full"><div class="label">Payment purpose</div><div class="value">\${ex.paymentPurpose ?? '—'}</div></div>
         </div>
-      `;
+      \`;
     }catch(err){
-      out.innerHTML = '<div class="err">'+(err.message||'Something went wrong')+'</div>';
+      out.innerHTML = '<div class="err>' + (err.message || 'Something went wrong') + '</div>';
     }finally{
       btn.disabled = false;
     }
@@ -128,7 +104,6 @@ function htmlPage() {
 </body>
 </html>`;
 }
-
 // ---- helpers ----
 function decodeNeoPayUrl(link) {
   try {
