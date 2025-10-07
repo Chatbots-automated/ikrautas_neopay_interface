@@ -24,7 +24,7 @@ const COL_FINAL_LINK = "text_mkr2wpca";
 const COL_LEAD_ID   = "text_mkr4wv8q";
 const COL_ADV_AMOUNT= "numeric_mks5kp0t";
 
-const WEBHOOK_URL = "https://n8n-up8s.onrender.com/webhook-test/77724b7f-99f9-4512-b94f-927d958beb27";
+const WEBHOOK_URL = "https://n8n-up8s.onrender.com/webhook/77724b7f-99f9-4512-b94f-927d958beb27";
 const LOGO_URL = "https://encrypted-tbn0.gstatic.com/images?q=tbn:ANd9GcSRzPxDNBqdxgrLYaD4EfETwe6vp-6Hqe3i0w&s";
 
 // ---------- UI ----------
@@ -126,6 +126,9 @@ const linkInput = el('link');
 const spIdInput = el('singleProjectItemId');
 const advInput = el('advanceAmount');
 
+// keep the last decoded payload for fallback
+let lastExtracted = null;
+
 function showOK(where, msg){ where.innerHTML = '<div class="ok">'+msg+'</div>'; }
 function showERR(where, msg){ where.innerHTML = '<div class="err">'+(msg||'Error')+'</div>'; }
 
@@ -149,6 +152,13 @@ el('btnDecode').addEventListener('click', async () => {
     const data = await call('decode', { link });
 
     const ex = data.extracted || {};
+    lastExtracted = ex;
+
+    // Auto-fill Single Project Item ID if present
+    if (ex.singleProjectItemId) {
+      spIdInput.value = ex.singleProjectItemId;
+    }
+
     outDecode.innerHTML = \`
       <div class="grid mt">
         <div class="field"><div class="label">Type</div><div class="value">\${ex.type ?? '—'}</div></div>
@@ -168,8 +178,10 @@ el('btnDecode').addEventListener('click', async () => {
 el('btnUpdateAdv').addEventListener('click', async () => {
   outAction.innerHTML = '';
   try{
-    const itemId = spIdInput.value.trim();
-    if(!itemId) throw new Error('Provide Single Project Item ID.');
+    // prefer manual input; else use last decoded
+    const itemId = spIdInput.value.trim() || (lastExtracted && lastExtracted.singleProjectItemId) || '';
+    if(!itemId) throw new Error('Single Project Item ID is missing (decode a link first or enter it).');
+
     const amtRaw = advInput.value.trim();
     if(!amtRaw) throw new Error('Provide advance amount.');
     const amount = Math.round(parseFloat(amtRaw)*100)/100;
@@ -187,8 +199,10 @@ el('btnSend').addEventListener('click', async () => {
   try{
     const link = linkInput.value.trim();
     if(!link) throw new Error('Paste the NeoPay link and click Decode first.');
-    const itemId = spIdInput.value.trim();
-    if(!itemId) throw new Error('Provide Single Project Item ID.');
+
+    // prefer manual input; else use last decoded
+    const itemId = spIdInput.value.trim() || (lastExtracted && lastExtracted.singleProjectItemId) || '';
+    if(!itemId) throw new Error('Single Project Item ID is missing (decode a link first or enter it).');
 
     const override = advInput.value.trim();
     const advanceOverride = override ? Math.round(parseFloat(override)*100)/100 : null;
@@ -303,8 +317,18 @@ module.exports = async (req, res) => {
     }
 
     if (action === "sendWebhook") {
-      const { link, singleProjectItemId, advanceOverride } = body;
+      let { link, singleProjectItemId, advanceOverride } = body;
       if (!link) throw new Error("Missing 'link'.");
+
+      // Derive item ID from the link if the client forgot to pass it
+      if (!singleProjectItemId) {
+        try {
+          const { payload } = decodeNeoPayUrl(link);
+          if (payload.singleProjectItemId) {
+            singleProjectItemId = String(payload.singleProjectItemId);
+          }
+        } catch {}
+      }
       if (!singleProjectItemId) throw new Error("Missing 'singleProjectItemId'.");
 
       const { payload, extracted } = decodeNeoPayUrl(link);
@@ -331,7 +355,7 @@ module.exports = async (req, res) => {
           }
         },
         meta: {
-          uiVersion: "1.2.0",
+          uiVersion: "1.3.0",
           source: "vercel-payments-console"
         }
       };
