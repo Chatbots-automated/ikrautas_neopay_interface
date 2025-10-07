@@ -13,7 +13,6 @@
  *   COL_FINAL_LINK:  text_mkr2wpca
  *   COL_LEAD_ID:     text_mkr4wv8q
  *   COL_ADV_AMOUNT:  numeric_mks5kp0t
- *   EMAIL_MIRROR:    mirror95   (Mirror column; read display_value)
  *
  * ENV:
  *   MONDAY_API_TOKEN (required for Monday actions)
@@ -24,7 +23,6 @@ const COL_ADV_LINK = "text_mkqxtzec";
 const COL_FINAL_LINK = "text_mkr2wpca";
 const COL_LEAD_ID   = "text_mkr4wv8q";
 const COL_ADV_AMOUNT= "numeric_mks5kp0t";
-const COL_EMAIL_MIRROR = "mirror95";
 
 const WEBHOOK_URL = "https://n8n-up8s.onrender.com/webhook-test/77724b7f-99f9-4512-b94f-927d958beb27";
 const LOGO_URL = "https://encrypted-tbn0.gstatic.com/images?q=tbn:ANd9GcSRzPxDNBqdxgrLYaD4EfETwe6vp-6Hqe3i0w&s";
@@ -111,13 +109,6 @@ input[type="text"],input[type="number"]{width:100%;padding:11px 12px;border:1px 
 
       <hr style="border:none;border-top:1px solid #e5e7eb;margin:16px 0"/>
 
-      <div class="row">
-        <div style="flex:1">
-          <label>Customer Email (from mirror95)</label>
-          <input type="text" id="mirrorEmail" placeholder="—" readonly />
-        </div>
-      </div>
-
       <div class="bar">
         <button class="btn" id="btnSend">Send to n8n webhook</button>
         <span class="muted">POST → ${WEBHOOK_URL}</span>
@@ -134,7 +125,6 @@ const outAction = el('actionOut');
 const linkInput = el('link');
 const spIdInput = el('singleProjectItemId');
 const advInput = el('advanceAmount');
-const mirrorEmail = el('mirrorEmail');
 
 function showOK(where, msg){ where.innerHTML = '<div class="ok">'+msg+'</div>'; }
 function showERR(where, msg){ where.innerHTML = '<div class="err">'+(msg||'Error')+'</div>'; }
@@ -198,22 +188,12 @@ el('btnSend').addEventListener('click', async () => {
     const link = linkInput.value.trim();
     if(!link) throw new Error('Paste the NeoPay link and click Decode first.');
     const itemId = spIdInput.value.trim();
-    if(!itemId) throw new Error('Provide Single Project Item ID so we can pull the email.');
-
-    // fetch the email from mirror95
-    const emailRes = await call('getMirrorEmail', { singleProjectItemId: itemId });
-    const email = emailRes?.email || '';
-    mirrorEmail.value = email || '—';
+    if(!itemId) throw new Error('Provide Single Project Item ID.');
 
     const override = advInput.value.trim();
     const advanceOverride = override ? Math.round(parseFloat(override)*100)/100 : null;
 
-    await call('sendWebhook', {
-      link,
-      singleProjectItemId: itemId,
-      advanceOverride
-    });
-
+    await call('sendWebhook', { link, singleProjectItemId: itemId, advanceOverride });
     showOK(outAction, 'Sent to n8n webhook.');
   }catch(e){
     showERR(outAction, e.message);
@@ -238,7 +218,7 @@ function decodeNeoPayUrl(link) {
     amount: payload.amount ? Number(payload.amount) : undefined,
     currency: payload.currency || undefined,
     transactionId: payload.transactionId || undefined,
-    internalId: payload.internalId || undefined, // leadId
+    internalId: payload.internalId || undefined,
     singleProjectItemId: payload.singleProjectItemId || undefined,
     paymentPurpose: payload.paymentPurpose || undefined
   };
@@ -260,35 +240,16 @@ async function mondayGraphQL(query, variables) {
   return json.data;
 }
 
-async function getMirrorEmail(itemId) {
-  const q = `
-    query ($ids: [Int!]) {
-      items (ids: $ids) {
-        id
-        column_values (ids: ["${COL_EMAIL_MIRROR}"]) {
-          id
-          ... on MirrorValue {
-            display_value
-          }
-        }
-      }
-    }
-  `;
-  const data = await mondayGraphQL(q, { ids: [Number(itemId)] });
-  const item = data?.items?.[0];
-  const cv = item?.column_values?.[0];
-  return (cv && cv.display_value) ? String(cv.display_value).trim() : "";
-}
-
+// Use ID! (strings) for board_id and item_id
 async function mondayUpdateCols(itemId, values) {
   const mutation = `
-    mutation Update($boardId: Int!, $itemId: Int!, $cols: JSON!) {
+    mutation Update($boardId: ID!, $itemId: ID!, $cols: JSON!) {
       change_multiple_column_values(board_id: $boardId, item_id: $itemId, column_values: $cols) { id }
     }
   `;
   await mondayGraphQL(mutation, {
-    boardId: BOARD_ID,
-    itemId: Number(itemId),
+    boardId: String(BOARD_ID),
+    itemId: String(itemId),
     cols: JSON.stringify(values)
   });
 }
@@ -296,6 +257,7 @@ async function mondayUpdateCols(itemId, values) {
 async function updateAdvanceAmountOnly(itemId, amount) {
   const rounded = Math.round(Number(amount) * 100) / 100;
   if (Number.isNaN(rounded)) throw new Error("Invalid amount.");
+  // numeric column accepts a number; send it as number in the JSON string
   await mondayUpdateCols(itemId, { [COL_ADV_AMOUNT]: rounded });
   return true;
 }
@@ -325,15 +287,6 @@ module.exports = async (req, res) => {
     const { action } = body || {};
     if (!action) throw new Error("Missing 'action'.");
 
-    // 0) Fetch email from mirror95
-    if (action === "getMirrorEmail") {
-      const { singleProjectItemId } = body;
-      if (!singleProjectItemId) throw new Error("Missing 'singleProjectItemId'.");
-      const email = await getMirrorEmail(singleProjectItemId);
-      return res.status(200).json({ email });
-    }
-
-    // 1) Decode
     if (action === "decode") {
       const { link } = body;
       if (!link) throw new Error("Missing 'link'.");
@@ -341,7 +294,6 @@ module.exports = async (req, res) => {
       return res.status(200).json({ extracted });
     }
 
-    // 2) Update advance in Monday
     if (action === "updateAdvance") {
       const { singleProjectItemId, amount } = body;
       if (!singleProjectItemId) throw new Error("Missing 'singleProjectItemId'.");
@@ -350,25 +302,18 @@ module.exports = async (req, res) => {
       return res.status(200).json({ updated: true });
     }
 
-    // 3) Send to n8n webhook (resend flow)
     if (action === "sendWebhook") {
       const { link, singleProjectItemId, advanceOverride } = body;
       if (!link) throw new Error("Missing 'link'.");
       if (!singleProjectItemId) throw new Error("Missing 'singleProjectItemId'.");
 
-      // decode link
       const { payload, extracted } = decodeNeoPayUrl(link);
 
-      // read email from mirror95
-      const emailTo = await getMirrorEmail(singleProjectItemId);
-
-      // build data-only payload (no HTML template)
       const webhookPayload = {
         event: "resend_payment_link",
         sentAt: new Date().toISOString(),
         link,
-        email_to: emailTo || null,
-        extracted,         // type, amount, currency, transactionId, internalId, singleProjectItemId, paymentPurpose
+        extracted,
         rawPayload: payload,
         overrides: {
           advanceAmount: (typeof advanceOverride === "number" && !Number.isNaN(advanceOverride))
@@ -382,17 +327,15 @@ module.exports = async (req, res) => {
             leadId: COL_LEAD_ID,
             advanceLink: COL_ADV_LINK,
             finalLink: COL_FINAL_LINK,
-            advanceAmount: COL_ADV_AMOUNT,
-            emailMirror: COL_EMAIL_MIRROR
+            advanceAmount: COL_ADV_AMOUNT
           }
         },
         meta: {
-          uiVersion: "1.1.0",
+          uiVersion: "1.2.0",
           source: "vercel-payments-console"
         }
       };
 
-      // IMPORTANT: use WEBHOOK_URL variable (NOT a string literal)
       const resp = await fetch(WEBHOOK_URL, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -404,7 +347,7 @@ module.exports = async (req, res) => {
         throw new Error("n8n webhook error: " + resp.status + " " + txt);
       }
 
-      return res.status(200).json({ sent: true, email_to: emailTo || null });
+      return res.status(200).json({ sent: true });
     }
 
     return res.status(400).json({ error: "Unknown action." });
