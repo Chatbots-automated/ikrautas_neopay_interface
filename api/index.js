@@ -5,7 +5,7 @@
  *    actions:
  *      - "decode": { link }
  *      - "updateAdvance": { singleProjectItemId, amount }
- *      - "sendWebhook": { link, to, subject?, message?, singleProjectItemId?, advanceOverride? }
+ *      - "sendWebhook": { link, singleProjectItemId, advanceOverride? }
  *
  * Monday (Single Project):
  *   BOARD_ID: 1645436514
@@ -13,9 +13,10 @@
  *   COL_FINAL_LINK:  text_mkr2wpca
  *   COL_LEAD_ID:     text_mkr4wv8q
  *   COL_ADV_AMOUNT:  numeric_mks5kp0t
+ *   EMAIL_MIRROR:    mirror95   (Mirror column; read display_value)
  *
  * ENV:
- *   MONDAY_API_TOKEN (required for updateAdvance)
+ *   MONDAY_API_TOKEN (required for Monday actions)
  */
 
 const BOARD_ID = 1645436514;
@@ -23,6 +24,7 @@ const COL_ADV_LINK = "text_mkqxtzec";
 const COL_FINAL_LINK = "text_mkr2wpca";
 const COL_LEAD_ID   = "text_mkr4wv8q";
 const COL_ADV_AMOUNT= "numeric_mks5kp0t";
+const COL_EMAIL_MIRROR = "mirror95";
 
 const WEBHOOK_URL = "https://n8n-up8s.onrender.com/webhook-test/77724b7f-99f9-4512-b94f-927d958beb27";
 const LOGO_URL = "https://encrypted-tbn0.gstatic.com/images?q=tbn:ANd9GcSRzPxDNBqdxgrLYaD4EfETwe6vp-6Hqe3i0w&s";
@@ -47,8 +49,7 @@ font-family:Inter,system-ui,-apple-system,Segoe UI,Roboto,Arial,Helvetica,sans-s
 h1{font-size:20px;margin:0 0 4px}
 p.small{margin:0;color:var(--muted);font-size:13px}
 label{display:block;font-size:13px;margin:12px 0 6px;color:#334155}
-input[type="text"],input[type="email"],input[type="number"],textarea{width:100%;padding:11px 12px;border:1px solid #e2e8f0;border-radius:10px;font-size:14px;background:#fff}
-textarea{min-height:110px;resize:vertical}
+input[type="text"],input[type="number"]{width:100%;padding:11px 12px;border:1px solid #e2e8f0;border-radius:10px;font-size:14px;background:#fff}
 .row{display:flex;gap:12px;align-items:center;flex-wrap:wrap}
 .muted{color:var(--muted);font-size:12px}
 .btn{background:var(--accent);color:#fff;border:0;border-radius:10px;padding:10px 14px;font-weight:700;cursor:pointer}
@@ -75,7 +76,7 @@ textarea{min-height:110px;resize:vertical}
     <img src="${LOGO_URL}" alt="Brand" />
     <div>
       <h1>Payments Console</h1>
-      <p class="small">Decode NeoPay links • Fix advance amounts • Resend payment via n8n webhook</p>
+      <p class="small">Decode NeoPay links • Fix advance amounts • Resend via n8n webhook</p>
     </div>
   </div>
 
@@ -110,16 +111,13 @@ textarea{min-height:110px;resize:vertical}
 
       <hr style="border:none;border-top:1px solid #e5e7eb;margin:16px 0"/>
 
-      <label>Customer Email</label>
-      <input type="email" id="emailTo" placeholder="client@example.com" />
-      <label>Subject</label>
-      <input type="text" id="emailSubject" value="Mokėjimo nuoroda" />
-      <label>Message (HTML ok)</label>
-      <textarea id="emailMessage"><p>Sveiki,</p>
-<p>Čia yra jūsų mokėjimo nuoroda:</p>
-<p><a href="#" id="msgLink">—</a></p>
-<p>Jei turite klausimų, parašykite.</p>
-</textarea>
+      <div class="row">
+        <div style="flex:1">
+          <label>Customer Email (from mirror95)</label>
+          <input type="text" id="mirrorEmail" placeholder="—" readonly />
+        </div>
+      </div>
+
       <div class="bar">
         <button class="btn" id="btnSend">Send to n8n webhook</button>
         <span class="muted">POST → ${WEBHOOK_URL}</span>
@@ -136,9 +134,7 @@ const outAction = el('actionOut');
 const linkInput = el('link');
 const spIdInput = el('singleProjectItemId');
 const advInput = el('advanceAmount');
-const toInput = el('emailTo');
-const subjInput = el('emailSubject');
-const msgInput = el('emailMessage');
+const mirrorEmail = el('mirrorEmail');
 
 function showOK(where, msg){ where.innerHTML = '<div class="ok">'+msg+'</div>'; }
 function showERR(where, msg){ where.innerHTML = '<div class="err">'+(msg||'Error')+'</div>'; }
@@ -163,13 +159,6 @@ el('btnDecode').addEventListener('click', async () => {
     const data = await call('decode', { link });
 
     const ex = data.extracted || {};
-    // inject link into message template
-    const tmpl = document.createElement('div');
-    tmpl.innerHTML = msgInput.value;
-    const a = tmpl.querySelector('#msgLink');
-    if (a) { a.textContent = link; a.href = link; }
-    msgInput.value = tmpl.innerHTML;
-
     outDecode.innerHTML = \`
       <div class="grid mt">
         <div class="field"><div class="label">Type</div><div class="value">\${ex.type ?? '—'}</div></div>
@@ -208,19 +197,23 @@ el('btnSend').addEventListener('click', async () => {
   try{
     const link = linkInput.value.trim();
     if(!link) throw new Error('Paste the NeoPay link and click Decode first.');
-    const to = toInput.value.trim();
-    if(!to) throw new Error('Provide customer email.');
-    const subject = subjInput.value.trim() || 'Mokėjimo nuoroda';
-    const message = msgInput.value.trim();
-    const itemId = spIdInput.value.trim() || null;
+    const itemId = spIdInput.value.trim();
+    if(!itemId) throw new Error('Provide Single Project Item ID so we can pull the email.');
+
+    // fetch the email from mirror95
+    const emailRes = await call('getMirrorEmail', { singleProjectItemId: itemId });
+    const email = emailRes?.email || '';
+    mirrorEmail.value = email || '—';
+
     const override = advInput.value.trim();
     const advanceOverride = override ? Math.round(parseFloat(override)*100)/100 : null;
 
-    const data = await call('sendWebhook', {
-      link, to, subject, message,
+    await call('sendWebhook', {
+      link,
       singleProjectItemId: itemId,
       advanceOverride
     });
+
     showOK(outAction, 'Sent to n8n webhook.');
   }catch(e){
     showERR(outAction, e.message);
@@ -252,27 +245,52 @@ function decodeNeoPayUrl(link) {
   return { token, payload, extracted };
 }
 
-async function mondayUpdateCols(itemId, values) {
+async function mondayGraphQL(query, variables) {
   const token = process.env.MONDAY_API_TOKEN;
   if (!token) throw new Error("MONDAY_API_TOKEN is not set.");
+  const resp = await fetch("https://api.monday.com/v2", {
+    method: "POST",
+    headers: { "Content-Type": "application/json", Authorization: token },
+    body: JSON.stringify({ query, variables })
+  });
+  const json = await resp.json();
+  if (!resp.ok || json.errors) {
+    throw new Error("Monday API error: " + (json.errors?.map(e => e.message).join("; ") || resp.statusText));
+  }
+  return json.data;
+}
+
+async function getMirrorEmail(itemId) {
+  const q = `
+    query ($ids: [Int!]) {
+      items (ids: $ids) {
+        id
+        column_values (ids: ["${COL_EMAIL_MIRROR}"]) {
+          id
+          ... on MirrorValue {
+            display_value
+          }
+        }
+      }
+    }
+  `;
+  const data = await mondayGraphQL(q, { ids: [Number(itemId)] });
+  const item = data?.items?.[0];
+  const cv = item?.column_values?.[0];
+  return (cv && cv.display_value) ? String(cv.display_value).trim() : "";
+}
+
+async function mondayUpdateCols(itemId, values) {
   const mutation = `
     mutation Update($boardId: Int!, $itemId: Int!, $cols: JSON!) {
       change_multiple_column_values(board_id: $boardId, item_id: $itemId, column_values: $cols) { id }
     }
   `;
-  const body = {
-    query: mutation,
-    variables: { boardId: BOARD_ID, itemId: Number(itemId), cols: JSON.stringify(values) }
-  };
-  const resp = await fetch("https://api.monday.com/v2", {
-    method: "POST",
-    headers: { "Content-Type": "application/json", Authorization: process.env.MONDAY_API_TOKEN },
-    body: JSON.stringify(body)
+  await mondayGraphQL(mutation, {
+    boardId: BOARD_ID,
+    itemId: Number(itemId),
+    cols: JSON.stringify(values)
   });
-  const json = await resp.json();
-  if (!resp.ok || json.errors) {
-    throw new Error("Monday update failed: " + (json.errors?.map(e => e.message).join("; ") || resp.statusText));
-  }
 }
 
 async function updateAdvanceAmountOnly(itemId, amount) {
@@ -307,6 +325,14 @@ module.exports = async (req, res) => {
     const { action } = body || {};
     if (!action) throw new Error("Missing 'action'.");
 
+    // 0) Fetch email from mirror95
+    if (action === "getMirrorEmail") {
+      const { singleProjectItemId } = body;
+      if (!singleProjectItemId) throw new Error("Missing 'singleProjectItemId'.");
+      const email = await getMirrorEmail(singleProjectItemId);
+      return res.status(200).json({ email });
+    }
+
     // 1) Decode
     if (action === "decode") {
       const { link } = body;
@@ -324,27 +350,26 @@ module.exports = async (req, res) => {
       return res.status(200).json({ updated: true });
     }
 
-    // 3) Send to n8n webhook (resend email workflow)
+    // 3) Send to n8n webhook (resend flow)
     if (action === "sendWebhook") {
-      const { link, to, subject, message, singleProjectItemId, advanceOverride } = body;
+      const { link, singleProjectItemId, advanceOverride } = body;
       if (!link) throw new Error("Missing 'link'.");
-      if (!to) throw new Error("Missing 'to'.");
+      if (!singleProjectItemId) throw new Error("Missing 'singleProjectItemId'.");
 
-      // Decode fresh to ensure payload is current
+      // decode link
       const { payload, extracted } = decodeNeoPayUrl(link);
 
-      // Build a rich payload with "everything"
+      // read email from mirror95
+      const emailTo = await getMirrorEmail(singleProjectItemId);
+
+      // build data-only payload (no HTML template)
       const webhookPayload = {
         event: "resend_payment_link",
         sentAt: new Date().toISOString(),
         link,
-        email: {
-          to,
-          subject: subject || "Mokėjimo nuoroda",
-          messageHtml: message || ""
-        },
+        email_to: emailTo || null,
         extracted,         // type, amount, currency, transactionId, internalId, singleProjectItemId, paymentPurpose
-        rawPayload: payload, // original decoded payload
+        rawPayload: payload,
         overrides: {
           advanceAmount: (typeof advanceOverride === "number" && !Number.isNaN(advanceOverride))
             ? Math.round(advanceOverride * 100) / 100
@@ -352,21 +377,23 @@ module.exports = async (req, res) => {
         },
         monday: {
           boardId: BOARD_ID,
-          singleProjectItemId: singleProjectItemId || extracted.singleProjectItemId || null,
+          singleProjectItemId: singleProjectItemId,
           columns: {
             leadId: COL_LEAD_ID,
             advanceLink: COL_ADV_LINK,
             finalLink: COL_FINAL_LINK,
-            advanceAmount: COL_ADV_AMOUNT
+            advanceAmount: COL_ADV_AMOUNT,
+            emailMirror: COL_EMAIL_MIRROR
           }
         },
         meta: {
-          uiVersion: "1.0.0",
+          uiVersion: "1.1.0",
           source: "vercel-payments-console"
         }
       };
 
-      const resp = await fetch("${WEBHOOK_URL}", {
+      // IMPORTANT: use WEBHOOK_URL variable (NOT a string literal)
+      const resp = await fetch(WEBHOOK_URL, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(webhookPayload)
@@ -377,7 +404,7 @@ module.exports = async (req, res) => {
         throw new Error("n8n webhook error: " + resp.status + " " + txt);
       }
 
-      return res.status(200).json({ sent: true });
+      return res.status(200).json({ sent: true, email_to: emailTo || null });
     }
 
     return res.status(400).json({ error: "Unknown action." });
