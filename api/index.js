@@ -1,4 +1,18 @@
 /**
+ * ⚠️ DEPRECATED - This file is kept for reference only.
+ * 
+ * The application has been migrated to Next.js (see app/ directory).
+ * This old single-file function is no longer the primary implementation.
+ * 
+ * All functionality has been preserved and improved in:
+ * - lib/neopay/decodePaymentUrl.ts (decode logic)
+ * - lib/monday/client.ts & queries.ts (Monday integration)
+ * - lib/webhooks/n8nClient.ts (webhook sending)
+ * - app/api/ (API routes)
+ * - app/payments/ (UI pages)
+ * 
+ * Original documentation:
+ * 
  * Payments Console (Vercel single-file function)
  * - GET  -> Serves UI
  * - POST -> { action, ... }
