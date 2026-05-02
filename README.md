@@ -19,11 +19,14 @@ This application provides a comprehensive control center for managing NeoPay pay
 
 ## Features
 
-- ✅ Payment list with search and filtering
+- ✅ Payment list with **working search** across all fields (name, email, phone, IDs)
 - ✅ Payment detail view with full audit trail
+- ✅ **Webhook response tracking** (complete send history)
 - ✅ Manual resend for advance and final payments
-- ✅ Monday.com data synchronization
-- ✅ NeoPay URL decoding
+- ✅ **Monday.com full synchronization** (import all historical data)
+- ✅ **Auto-refresh** (hourly sync from Monday.com)
+- ✅ **Cron job support** (automatic background sync on Vercel)
+- ✅ NeoPay URL generation and decoding
 - ✅ Event logging and email tracking
 - ✅ Status tracking (created, sent, resent, paid, failed, expired)
 - 🚧 NeoPay webhook receiver (needs signature verification)
@@ -134,7 +137,49 @@ npm run dev
 
 Open [http://localhost:3000](http://localhost:3000) to see the application.
 
+### 5. Run Additional Migrations
+
+For webhook response tracking (send history):
+
+Go to Supabase SQL Editor and run:
+```sql
+-- File: supabase/migrations/002_webhook_responses.sql
+```
+
+### 6. Import Historical Data (IMPORTANT!)
+
+**If you have existing payment data in Monday.com:**
+
+1. Go to `/payments` page
+2. Click **"🔄 Sinchronizuoti iš Monday"** button
+3. Wait for completion (may take 5+ minutes for 1000+ items)
+
+This will import ALL historical payments from Monday.com into the dashboard.
+
+📖 See **`HOW_TO_SYNC_HISTORICAL_DATA.md`** for detailed instructions.
+
 ## Usage
+
+### Syncing Historical Data
+
+**Problem:** "I only see a few rows, but the system has been running for a year!"
+
+**Solution:** Use the Monday.com sync feature to import all historical data:
+
+1. Click **"🔄 Sinchronizuoti iš Monday"** button on the payments page
+2. Confirm the action
+3. Wait for completion
+4. All historical payments will now appear
+
+See `HOW_TO_SYNC_HISTORICAL_DATA.md` and `MONDAY_SYNC_GUIDE.md` for complete documentation.
+
+### Auto-Refresh
+
+Enable automatic hourly refresh:
+
+1. Go to `/payments`
+2. Check **"Auto-atnaujinimas (1h)"** checkbox
+3. Payments will sync every hour while the page is open
 
 ### Viewing Payments
 
@@ -286,10 +331,36 @@ Key changes:
 - No database → Supabase integration
 - Manual actions only → Full CRUD + audit trail
 
+## Documentation
+
+This project includes comprehensive documentation:
+
+### Setup & Getting Started
+- **`README.md`** (this file) - Project overview and quick start
+- **`SETUP_INSTRUCTIONS.md`** - Detailed setup guide
+- **`QUICK_START.md`** - Quick start guide
+- **`PROJECT_SUMMARY.md`** - High-level project summary
+
+### Feature Documentation
+- **`WHATS_NEW.md`** - ⭐ Latest updates and new features
+- **`WEBHOOK_RESPONSE_TRACKING.md`** - Send history and webhook tracking
+- **`HOW_TO_SYNC_HISTORICAL_DATA.md`** - How to import historical payments
+- **`MONDAY_SYNC_GUIDE.md`** - Complete Monday.com sync documentation
+- **`MONDAY_CONFIGURATION.md`** - Monday board/column mappings
+- **`NEOPAY_INTEGRATION.md`** - NeoPay JWT generation and decoding
+
+### Development
+- **`DEVELOPMENT_PLAN.md`** - Development roadmap and architecture
+
+### Important Files
+- **`api/index.js`** - Original deprecated Vercel function (reference only)
+- **`supabase/migrations/`** - Database migrations
+- **`supabase/seed.sql`** - Development seed data
+
 ## Support
 
 For questions or issues, refer to:
-- `DEVELOPMENT_PLAN.md` - Detailed development roadmap
+- The documentation files above
 - Monday.com board for business logic
 - NeoPay documentation (if available)
 

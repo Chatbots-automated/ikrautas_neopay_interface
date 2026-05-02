@@ -1,0 +1,123 @@
+╔════════════════════════════════════════════════════════════════╗
+║        HOW TO IMPORT HISTORICAL PAYMENT DATA - QUICK GUIDE     ║
+╚════════════════════════════════════════════════════════════════╝
+
+PROBLEM:
+"I see very little actual rows. Just for this month but this system 
+has been running for about a year now."
+
+SOLUTION:
+Import all historical data from Monday.com with ONE CLICK!
+
+╔════════════════════════════════════════════════════════════════╗
+║  STEP-BY-STEP INSTRUCTIONS                                     ║
+╚════════════════════════════════════════════════════════════════╝
+
+1. Make sure your dev server is running:
+   
+   npm run dev
+
+2. Open your browser and go to:
+   
+   http://localhost:3000/payments
+
+3. Look for the button:
+   
+   🔄 Sinchronizuoti iš Monday
+
+4. Click it and confirm the action
+
+5. Wait 4-5 minutes for ~1100 items to sync
+
+6. You'll see a popup with results:
+   
+   Sinchronizacija baigta!
+   
+   Iš viso: 1100 Monday įrašų
+   Avanso mokėjimų: 450
+   Galutinių mokėjimų: 380
+   Klaidų: 2
+
+7. ALL your historical payments are now in the dashboard! 🎉
+
+╔════════════════════════════════════════════════════════════════╗
+║  AUTO-REFRESH (ONGOING SYNC)                                   ║
+╚════════════════════════════════════════════════════════════════╝
+
+To keep data fresh automatically:
+
+☑ Check the "Auto-atnaujinimas (1h)" checkbox
+
+This will sync every hour while your browser is open.
+
+╔════════════════════════════════════════════════════════════════╗
+║  PRODUCTION (AUTOMATIC BACKGROUND SYNC)                        ║
+╚════════════════════════════════════════════════════════════════╝
+
+When you deploy to Vercel:
+
+✅ Automatic hourly sync is already configured
+✅ Runs in the background (even when no one is using the dashboard)
+✅ Keeps data fresh 24/7
+
+No additional setup needed!
+
+╔════════════════════════════════════════════════════════════════╗
+║  WHAT GETS SYNCED                                              ║
+╚════════════════════════════════════════════════════════════════╝
+
+From Monday.com Single Project Board (1645436514):
+• All items with payment URLs
+• Client names, emails, phones
+• Advance and final payment amounts
+• Payment URLs (advance and final)
+• Lead IDs and Item IDs
+• Full Monday item snapshots
+
+From NeoPay URLs:
+• Transaction IDs
+• Decoded payment details
+
+Result:
+• Complete searchable payment history
+• All audit trails and timelines
+• Ready for monitoring and resending
+
+╔════════════════════════════════════════════════════════════════╗
+║  TROUBLESHOOTING                                               ║
+╚════════════════════════════════════════════════════════════════╝
+
+Q: Sync taking too long?
+A: Normal for 1000+ items. Can take 5+ minutes. Be patient!
+
+Q: Some payments didn't sync?
+A: Check the "Klaidų" (errors) count. Empty URLs are skipped.
+
+Q: Still seeing few rows?
+A: Make sure you ran the database migration first:
+   supabase/migrations/001_payment_control_tables_safe.sql
+
+Q: Want to run sync again?
+A: Totally safe! It won't create duplicates. Click the button again.
+
+╔════════════════════════════════════════════════════════════════╗
+║  MORE HELP                                                     ║
+╚════════════════════════════════════════════════════════════════╝
+
+Read the full documentation:
+
+📖 HOW_TO_SYNC_HISTORICAL_DATA.md - Detailed step-by-step guide
+📖 MONDAY_SYNC_GUIDE.md - Complete sync documentation
+📖 README.md - General project documentation
+
+╔════════════════════════════════════════════════════════════════╗
+║  SUMMARY                                                       ║
+╚════════════════════════════════════════════════════════════════╝
+
+1. Click "🔄 Sinchronizuoti iš Monday" button
+2. Wait 5 minutes
+3. See all your historical data
+4. Enable auto-refresh for ongoing sync
+5. Done! 🎉
+
+That's it! Your entire year of payment history is now in the dashboard.

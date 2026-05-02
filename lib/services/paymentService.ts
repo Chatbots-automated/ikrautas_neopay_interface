@@ -149,6 +149,10 @@ export async function getPaymentDetailView(
 
   const events = await getPaymentEvents(neopayPaymentId)
   const emailLogs = await getPaymentEmailLogs(neopayPaymentId)
+  
+  // Get webhook response history
+  const { getWebhookResponseHistory } = await import('./webhookResponseService')
+  const webhookResponses = await getWebhookResponseHistory(neopayPaymentId)
 
   return {
     payment,
@@ -157,6 +161,7 @@ export async function getPaymentDetailView(
       : payment.payment_request_detail,
     events,
     emailLogs,
+    webhookResponses,
   }
 }
 
@@ -192,12 +197,35 @@ export async function searchPayments(
   if (search && search.trim()) {
     const searchTerm = search.trim()
     
-    // Search in neopay_payments fields
-    query = query.or(
-      `transaction_id.ilike.%${searchTerm}%,` +
-      `lead_id.ilike.%${searchTerm}%,` +
-      `single_project_item_id.ilike.%${searchTerm}%`
-    )
+    // First, find matching payment_request_details
+    const { data: matchingDetails } = await supabaseAdmin
+      .from('payment_request_details')
+      .select('neopay_payment_id')
+      .or(
+        `client_name.ilike.%${searchTerm}%,` +
+        `client_email.ilike.%${searchTerm}%,` +
+        `client_phone.ilike.%${searchTerm}%,` +
+        `lead_id.ilike.%${searchTerm}%,` +
+        `single_project_item_id.ilike.%${searchTerm}%`
+      )
+    
+    const matchingPaymentIds = matchingDetails?.map(d => d.neopay_payment_id).filter(Boolean) || []
+    
+    // Search in neopay_payments fields OR matching detail IDs
+    if (matchingPaymentIds.length > 0) {
+      query = query.or(
+        `transaction_id.ilike.%${searchTerm}%,` +
+        `lead_id.ilike.%${searchTerm}%,` +
+        `single_project_item_id.ilike.%${searchTerm}%,` +
+        `id.in.(${matchingPaymentIds.join(',')})`
+      )
+    } else {
+      query = query.or(
+        `transaction_id.ilike.%${searchTerm}%,` +
+        `lead_id.ilike.%${searchTerm}%,` +
+        `single_project_item_id.ilike.%${searchTerm}%`
+      )
+    }
   }
 
   // Apply pagination
@@ -388,7 +416,8 @@ export async function resendPayment(params: ResendPaymentParams): Promise<void> 
   const advanceOverride = payment.payment_type === 'advance' ? params.amountOverride : undefined
   const finalOverride = payment.payment_type === 'final' ? params.amountOverride : undefined
 
-  await sendToN8nWebhook(
+  // Send to n8n webhook and capture response
+  const webhookResponse = await sendToN8nWebhook(
     paymentUrl,
     payment.single_project_item_id,
     extracted,
@@ -396,6 +425,25 @@ export async function resendPayment(params: ResendPaymentParams): Promise<void> 
     advanceOverride,
     finalOverride
   )
+
+  // Log webhook response for send history
+  const { logWebhookResponse } = await import('./webhookResponseService')
+  await logWebhookResponse({
+    neopayPaymentId: payment.id,
+    paymentRequestDetailId: detail.id,
+    webhookUrl: process.env.N8N_WEBHOOK_URL || 'https://n8n-up8s.onrender.com/webhook/77724b7f-99f9-4512-b94f-927d958beb27',
+    requestPayload: {
+      event: 'resend_payment_link',
+      link: paymentUrl,
+      extracted,
+      rawPayload: payload,
+      overrides: { advanceAmount: advanceOverride, finalAmount: finalOverride },
+    },
+    responseStatus: 200,
+    responseBody: webhookResponse,
+    success: webhookResponse.success,
+    sentBy: params.sentBy || 'system',
+  })
 
   await supabaseAdmin
     .from('payment_request_details')

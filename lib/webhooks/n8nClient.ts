@@ -39,6 +39,16 @@ export interface N8nWebhookPayload {
   }
 }
 
+export interface N8nWebhookResponse {
+  success: boolean
+  payment: {
+    lead_id: string
+    single_project_item_id: string
+    amount: number
+    type: string
+  }
+}
+
 /**
  * Sends a payment resend request to the n8n webhook.
  * 
@@ -48,6 +58,7 @@ export interface N8nWebhookPayload {
  * @param payload - Raw NeoPay JWT payload
  * @param advanceOverride - Optional override for advance amount
  * @param finalOverride - Optional override for final amount
+ * @returns The webhook response
  */
 export async function sendToN8nWebhook(
   link: string,
@@ -56,7 +67,7 @@ export async function sendToN8nWebhook(
   payload: NeoPayTokenPayload,
   advanceOverride?: number,
   finalOverride?: number
-): Promise<void> {
+): Promise<N8nWebhookResponse> {
   const webhookPayload: N8nWebhookPayload = {
     event: 'resend_payment_link',
     sentAt: new Date().toISOString(),
@@ -102,4 +113,8 @@ export async function sendToN8nWebhook(
     const text = await response.text().catch(() => '')
     throw new Error(`n8n webhook error: ${response.status} ${text}`)
   }
+
+  // Parse and return the webhook response
+  const webhookResponse: N8nWebhookResponse = await response.json()
+  return webhookResponse
 }

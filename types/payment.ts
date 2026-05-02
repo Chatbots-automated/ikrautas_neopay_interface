@@ -87,6 +87,24 @@ export interface PaymentEmailLog {
   sent_at: string
 }
 
+export interface WebhookResponse {
+  id: string
+  neopay_payment_id?: string | null
+  payment_request_detail_id?: string | null
+  webhook_url?: string | null
+  request_payload?: Record<string, unknown> | null
+  response_status: number
+  response_body?: Record<string, unknown> | null
+  success: boolean
+  lead_id?: string | null
+  single_project_item_id?: string | null
+  amount?: number | null
+  payment_type?: string | null
+  error_message?: string | null
+  sent_by?: string | null
+  created_at: string
+}
+
 export interface PaymentWithDetails extends NeoPayPayment {
   payment_request_detail?: PaymentRequestDetail | null
 }
@@ -96,4 +114,5 @@ export interface PaymentDetailView {
   details?: PaymentRequestDetail | null
   events: PaymentEvent[]
   emailLogs: PaymentEmailLog[]
+  webhookResponses: WebhookResponse[]
 }

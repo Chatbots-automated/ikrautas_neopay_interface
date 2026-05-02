@@ -15,13 +15,27 @@ export default function PaymentsPage() {
   const [payments, setPayments] = useState<PaymentWithDetails[]>([])
   const [total, setTotal] = useState(0)
   const [loading, setLoading] = useState(true)
+  const [syncing, setSyncing] = useState(false)
   const [search, setSearch] = useState('')
   const [paymentType, setPaymentType] = useState<PaymentType | 'all'>('all')
   const [status, setStatus] = useState<PaymentStatus | 'all'>('all')
+  const [autoRefresh, setAutoRefresh] = useState(false)
 
   useEffect(() => {
     fetchPayments()
   }, [search, paymentType, status])
+
+  // Auto-refresh every hour if enabled
+  useEffect(() => {
+    if (!autoRefresh) return
+
+    const interval = setInterval(() => {
+      console.log('Auto-refreshing payments from Monday.com...')
+      handleSyncFromMonday()
+    }, 60 * 60 * 1000) // 1 hour
+
+    return () => clearInterval(interval)
+  }, [autoRefresh])
 
   async function fetchPayments() {
     setLoading(true)
@@ -47,6 +61,39 @@ export default function PaymentsPage() {
     }
   }
 
+  async function handleSyncFromMonday() {
+    if (!confirm('Ar tikrai norite sinchronizuoti visus mokėjimus iš Monday.com? Tai gali užtrukti kelias minutes.')) {
+      return
+    }
+
+    setSyncing(true)
+    try {
+      const response = await fetch('/api/sync/monday', {
+        method: 'POST',
+      })
+
+      const data = await response.json()
+
+      if (response.ok) {
+        alert(
+          `Sinchronizacija baigta!\n\n` +
+          `Iš viso: ${data.results.total} Monday įrašų\n` +
+          `Avanso mokėjimų: ${data.results.advanceSynced}\n` +
+          `Galutinių mokėjimų: ${data.results.finalSynced}\n` +
+          `Klaidų: ${data.results.errors}`
+        )
+        await fetchPayments() // Refresh the list
+      } else {
+        alert(`Klaida: ${data.error}`)
+      }
+    } catch (error) {
+      console.error('Error syncing from Monday:', error)
+      alert('Nepavyko sinchronizuoti mokėjimų')
+    } finally {
+      setSyncing(false)
+    }
+  }
+
   return (
     <div className="container mx-auto px-4 py-8">
       <Card>
@@ -58,9 +105,28 @@ export default function PaymentsPage() {
                 Iš viso: {total} mokėjimų
               </p>
             </div>
-            <Button variant="primary" size="md">
-              + Naujas mokėjimas
-            </Button>
+            <div className="flex gap-2">
+              <div className="flex items-center gap-2 mr-2">
+                <input
+                  type="checkbox"
+                  id="autoRefresh"
+                  checked={autoRefresh}
+                  onChange={(e) => setAutoRefresh(e.target.checked)}
+                  className="w-4 h-4 text-blue-600 border-slate-300 rounded focus:ring-blue-500"
+                />
+                <label htmlFor="autoRefresh" className="text-sm text-slate-700">
+                  Auto-atnaujinimas (1h)
+                </label>
+              </div>
+              <Button
+                variant="outline"
+                size="md"
+                onClick={handleSyncFromMonday}
+                disabled={syncing}
+              >
+                {syncing ? '🔄 Sinchronizuojama...' : '🔄 Sinchronizuoti iš Monday'}
+              </Button>
+            </div>
           </div>
         </CardHeader>
 

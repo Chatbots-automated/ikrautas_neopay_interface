@@ -21,6 +21,8 @@ export default function PaymentDetailPage() {
   const [showResendForm, setShowResendForm] = useState(false)
   const [newAmount, setNewAmount] = useState('')
   const [generateNew, setGenerateNew] = useState(false)
+  const [justSent, setJustSent] = useState(false)
+  const [showSuccessToast, setShowSuccessToast] = useState(false)
 
   useEffect(() => {
     if (id) {
@@ -70,18 +72,40 @@ export default function PaymentDetailPage() {
       })
 
       if (response.ok) {
-        alert('Mokėjimo nuoroda išsiųsta sėkmingai!')
+        // Mark as just sent for highlighting
+        setJustSent(true)
+        
+        // Success! Refresh data to show new webhook response
+        await fetchPaymentDetail()
+        
+        // Close form and reset
         setShowResendForm(false)
         setNewAmount('')
         setGenerateNew(false)
-        await fetchPaymentDetail()
+        
+        // Show success toast
+        setShowSuccessToast(true)
+        
+        // Scroll to send history section after a brief delay
+        setTimeout(() => {
+          const sendHistoryElement = document.getElementById('send-history')
+          if (sendHistoryElement) {
+            sendHistoryElement.scrollIntoView({ behavior: 'smooth', block: 'center' })
+          }
+        }, 200)
+        
+        // Remove highlight and toast after 5 seconds
+        setTimeout(() => {
+          setJustSent(false)
+          setShowSuccessToast(false)
+        }, 5000)
       } else {
         const data = await response.json()
-        alert(`Klaida: ${data.error}`)
+        alert(`❌ Klaida: ${data.error}`)
       }
     } catch (error) {
       console.error('Error resending payment:', error)
-      alert('Nepavyko išsiųsti mokėjimo nuorodos')
+      alert('❌ Nepavyko išsiųsti mokėjimo nuorodos')
     } finally {
       setResending(false)
     }
@@ -112,7 +136,10 @@ export default function PaymentDetailPage() {
   if (loading) {
     return (
       <div className="container mx-auto px-4 py-8">
-        <div className="text-center py-12 text-slate-500">Kraunama...</div>
+        <div className="text-center py-12">
+          <div className="inline-block animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600 mb-4"></div>
+          <div className="text-slate-500">Kraunama...</div>
+        </div>
       </div>
     )
   }
@@ -125,10 +152,42 @@ export default function PaymentDetailPage() {
     )
   }
 
-  const { payment, details, events, emailLogs } = paymentDetail
+  const { payment, details, events, emailLogs, webhookResponses } = paymentDetail
 
   return (
     <div className="container mx-auto px-4 py-8">
+      {/* Loading Overlay */}
+      {resending && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 z-50 flex items-center justify-center">
+          <div className="bg-white rounded-lg p-8 max-w-sm mx-4 text-center shadow-xl">
+            <div className="inline-block animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600 mb-4"></div>
+            <h3 className="text-lg font-semibold text-slate-900 mb-2">
+              Siunčiama mokėjimo nuoroda...
+            </h3>
+            <p className="text-sm text-slate-600">
+              Laukiama webhook atsakymo
+            </p>
+          </div>
+        </div>
+      )}
+      
+      {/* Success Toast */}
+      {showSuccessToast && (
+        <div className="fixed top-4 right-4 z-50 animate-in slide-in-from-top">
+          <div className="bg-green-600 text-white rounded-lg shadow-lg p-4 max-w-md">
+            <div className="flex items-start gap-3">
+              <span className="text-2xl">✅</span>
+              <div>
+                <h4 className="font-semibold mb-1">Mokėjimas išsiųstas sėkmingai!</h4>
+                <p className="text-sm text-green-100">
+                  Webhook atsakymas gautas. Žiūrėkite "Siuntimo istorija" žemiau.
+                </p>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+      
       <div className="mb-4">
         <Button variant="ghost" size="sm" onClick={() => router.back()}>
           ← Atgal
@@ -191,17 +250,30 @@ export default function PaymentDetailPage() {
                   </p>
                 </div>
 
-                <div className="flex items-center gap-2">
-                  <input
-                    type="checkbox"
-                    id="generateNew"
-                    checked={generateNew}
-                    onChange={(e) => setGenerateNew(e.target.checked)}
-                    className="w-4 h-4 text-blue-600 border-slate-300 rounded focus:ring-blue-500"
-                  />
-                  <label htmlFor="generateNew" className="text-sm text-slate-700">
-                    Generuoti naują mokėjimo nuorodą
-                  </label>
+                <div>
+                  <div className="flex items-center gap-2">
+                    <input
+                      type="checkbox"
+                      id="generateNew"
+                      checked={generateNew}
+                      onChange={(e) => setGenerateNew(e.target.checked)}
+                      className="w-4 h-4 text-blue-600 border-slate-300 rounded focus:ring-blue-500"
+                    />
+                    <label htmlFor="generateNew" className="text-sm text-slate-700">
+                      Generuoti naują mokėjimo nuorodą
+                    </label>
+                  </div>
+                  <p className="text-xs text-slate-500 mt-1 ml-6">
+                    {generateNew ? (
+                      <span className="text-amber-700">
+                        ✓ Bus sukurta nauja NeoPay JWT nuoroda su atnaujinta suma ir transaction ID
+                      </span>
+                    ) : (
+                      <span>
+                        Bus panaudota esama mokėjimo nuoroda (jei egzistuoja)
+                      </span>
+                    )}
+                  </p>
                 </div>
 
                 <div className="bg-blue-100 border border-blue-200 rounded-lg p-3">
@@ -391,6 +463,90 @@ export default function PaymentDetailPage() {
             )}
           </CardContent>
         </Card>
+
+        <div id="send-history">
+          <Card>
+            <CardHeader>
+              <div className="flex items-center gap-2">
+                <CardTitle>Siuntimo istorija (Webhook atsakymai)</CardTitle>
+                {justSent && (
+                  <span className="px-2 py-1 bg-green-100 text-green-800 text-xs font-medium rounded animate-pulse">
+                    Naujas!
+                  </span>
+                )}
+              </div>
+            </CardHeader>
+          <CardContent>
+            {!webhookResponses || webhookResponses.length === 0 ? (
+              <div className="text-sm text-slate-500">Siuntimų nėra</div>
+            ) : (
+              <div className="space-y-3">
+                {webhookResponses.map((response, index) => (
+                  <div 
+                    key={response.id} 
+                    className={`border rounded-lg p-4 transition-all duration-500 ${
+                      index === 0 && justSent
+                        ? 'border-green-400 bg-green-50 shadow-lg'
+                        : 'border-slate-200'
+                    }`}
+                  >
+                    <div className="flex items-start justify-between mb-2">
+                      <div className="flex items-center gap-2">
+                        <span className={`px-2 py-1 rounded text-xs font-medium ${
+                          response.success 
+                            ? 'bg-green-100 text-green-800' 
+                            : 'bg-red-100 text-red-800'
+                        }`}>
+                          {response.success ? '✓ Sėkminga' : '✗ Nepavyko'}
+                        </span>
+                        <span className="text-xs text-slate-500">
+                          HTTP {response.response_status}
+                        </span>
+                      </div>
+                      <div className="text-xs text-slate-500">
+                        {formatDate(response.created_at)}
+                      </div>
+                    </div>
+                    
+                    {response.response_body && 'payment' in response.response_body && (
+                      <div className="mt-3 bg-slate-50 p-3 rounded text-xs font-mono">
+                        <div className="grid grid-cols-2 gap-2">
+                          <div>
+                            <span className="text-slate-600">Lead ID:</span>{' '}
+                            <span className="text-slate-900">{response.lead_id}</span>
+                          </div>
+                          <div>
+                            <span className="text-slate-600">Item ID:</span>{' '}
+                            <span className="text-slate-900">{response.single_project_item_id}</span>
+                          </div>
+                          <div>
+                            <span className="text-slate-600">Suma:</span>{' '}
+                            <span className="text-slate-900">{formatCurrency(response.amount || 0)}</span>
+                          </div>
+                          <div>
+                            <span className="text-slate-600">Tipas:</span>{' '}
+                            <span className="text-slate-900">{response.payment_type}</span>
+                          </div>
+                        </div>
+                      </div>
+                    )}
+
+                    {response.error_message && (
+                      <div className="mt-2 text-sm text-red-600">
+                        Klaida: {response.error_message}
+                      </div>
+                    )}
+
+                    <div className="mt-2 text-xs text-slate-500">
+                      Siuntė: {response.sent_by || 'system'}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </CardContent>
+          </Card>
+        </div>
 
         <Card>
           <CardHeader>
