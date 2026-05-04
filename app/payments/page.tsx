@@ -71,6 +71,7 @@ export default function PaymentsPage() {
   const [total, setTotal] = useState(0)
   const [loading, setLoading] = useState(true)
   const [syncing, setSyncing] = useState(false)
+  const [cleaningUp, setCleaningUp] = useState(false)
   const [search, setSearch] = useState('')
   const [paymentType, setPaymentType] = useState<PaymentType | 'all'>('all')
   const [status, setStatus] = useState<PaymentStatus | 'all'>('all')
@@ -158,6 +159,37 @@ export default function PaymentsPage() {
     }
   }
 
+  async function handleCleanupDuplicates() {
+    if (!confirm('Ar tikrai norite išvalyti dublikatus? Bus ištrinti visi pasikartojantys mokėjimai, paliekant tik seniausius įrašus.')) {
+      return
+    }
+
+    setCleaningUp(true)
+    try {
+      const response = await fetch('/api/payments/cleanup-duplicates', {
+        method: 'POST',
+      })
+
+      const data = await response.json()
+
+      if (response.ok) {
+        alert(
+          `Išvalymas baigtas!\n\n` +
+          `Ištrinta dublikatų: ${data.deletedCount}\n` +
+          `Dublikatų grupių: ${data.duplicateGroups}`
+        )
+        await fetchPayments() // Refresh the list
+      } else {
+        alert(`Klaida: ${data.error}`)
+      }
+    } catch (error) {
+      console.error('Error cleaning up duplicates:', error)
+      alert('Nepavyko išvalyti dublikatų')
+    } finally {
+      setCleaningUp(false)
+    }
+  }
+
   // Group payments by client
   function groupPaymentsByClient(): ClientGroup[] {
     const grouped = new Map<string, ClientGroup>()
@@ -227,10 +259,18 @@ export default function PaymentsPage() {
               <Button
                 variant="outline"
                 size="md"
+                onClick={handleCleanupDuplicates}
+                disabled={cleaningUp}
+              >
+                {cleaningUp ? '🧹 Valoma...' : '🧹 Išvalyti dublikatus'}
+              </Button>
+              <Button
+                variant="outline"
+                size="md"
                 onClick={handleSyncFromMonday}
                 disabled={syncing}
               >
-                {syncing ? '🔄 Sinchronizuojama...' : '🔄 Sinchronizuoti iš Monday'}
+                {syncing ? '🔄 Sinchronizuojama...' : '🔄 Sinchronizuoti visus'}
               </Button>
             </div>
           </div>

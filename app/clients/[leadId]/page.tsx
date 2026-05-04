@@ -65,8 +65,10 @@ export default function ClientDetailPage() {
   
   const [payments, setPayments] = useState<PaymentWithDetails[]>([])
   const [loading, setLoading] = useState(true)
+  const [syncing, setSyncing] = useState(false)
   const [clientName, setClientName] = useState<string>('')
   const [clientEmail, setClientEmail] = useState<string | null>(null)
+  const [itemId, setItemId] = useState<string | null>(null)
 
   useEffect(() => {
     fetchClientPayments()
@@ -102,6 +104,7 @@ export default function ClientDetailPage() {
           
           setClientName(detail?.client_name || 'Nežinomas klientas')
           setClientEmail(detail?.client_email || null)
+          setItemId(firstPayment.single_project_item_id)
         }
       } else {
         console.error('Failed to fetch payments:', data.error)
@@ -110,6 +113,42 @@ export default function ClientDetailPage() {
       console.error('Error fetching payments:', error)
     } finally {
       setLoading(false)
+    }
+  }
+
+  async function handleSyncClient() {
+    if (!itemId) {
+      alert('Nėra Item ID, negali sinchronizuoti')
+      return
+    }
+
+    if (!confirm('Ar tikrai norite sinchronizuoti šio kliento mokėjimus iš Monday.com?')) {
+      return
+    }
+
+    setSyncing(true)
+    try {
+      const response = await fetch(`/api/sync/monday/${itemId}`, {
+        method: 'POST',
+      })
+
+      const data = await response.json()
+
+      if (response.ok) {
+        alert(
+          `Sinchronizacija baigta!\n\n` +
+          `Avanso mokėjimas: ${data.advanceSynced ? 'Sinchronizuotas' : 'Nerastas'}\n` +
+          `Galutinis mokėjimas: ${data.finalSynced ? 'Sinchronizuotas' : 'Nerastas'}`
+        )
+        await fetchClientPayments() // Refresh the data
+      } else {
+        alert(`Klaida: ${data.error}`)
+      }
+    } catch (error) {
+      console.error('Error syncing client:', error)
+      alert('Nepavyko sinchronizuoti kliento mokėjimų')
+    } finally {
+      setSyncing(false)
     }
   }
 
@@ -141,9 +180,19 @@ export default function ClientDetailPage() {
             </p>
           </div>
           
-          <div className="text-right">
-            <div className="text-sm text-slate-600">Mokėjimų:</div>
-            <div className="text-3xl font-bold text-slate-900">{payments.length}</div>
+          <div className="flex flex-col items-end gap-2">
+            <div className="text-right">
+              <div className="text-sm text-slate-600">Mokėjimų:</div>
+              <div className="text-3xl font-bold text-slate-900">{payments.length}</div>
+            </div>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={handleSyncClient}
+              disabled={syncing || !itemId}
+            >
+              {syncing ? '🔄 Sinchronizuojama...' : '🔄 Sinchronizuoti'}
+            </Button>
           </div>
         </div>
       </div>

@@ -104,7 +104,7 @@ export async function syncMondayItemToDatabase(
         .select('id')
         .eq('transaction_id', transactionId)
         .eq('payment_type', 'advance')
-        .single()
+        .maybeSingle()
 
       if (!existing) {
         // Create neopay_payments record
@@ -165,7 +165,7 @@ export async function syncMondayItemToDatabase(
         .select('id')
         .eq('transaction_id', transactionId)
         .eq('payment_type', 'final')
-        .single()
+        .maybeSingle()
 
       if (!existing) {
         // Create neopay_payments record
@@ -259,5 +259,69 @@ export async function syncAllPaymentsFromMonday(): Promise<{
     advanceSynced,
     finalSynced,
     errors,
+  }
+}
+
+/**
+ * Syncs a single item from Monday.com by item ID.
+ * Useful for refreshing a specific client's payment data.
+ */
+export async function syncSingleItemFromMonday(itemId: string): Promise<{
+  success: boolean
+  advanceSynced: boolean
+  finalSynced: boolean
+  error?: string
+}> {
+  try {
+    console.log(`Syncing single item: ${itemId}`)
+
+    const query = `
+      query GetSingleItem($boardId: [ID!]!, $itemId: [ID!]!) {
+        boards(ids: $boardId) {
+          items_page(query_params: {ids: $itemId}) {
+            items {
+              id
+              name
+              column_values {
+                id
+                value
+                text
+              }
+            }
+          }
+        }
+      }
+    `
+
+    const response: GetBoardItemsResponse = await mondayGraphQL<GetBoardItemsResponse>(query, {
+      boardId: [String(MONDAY_CONFIG.BOARD_ID)],
+      itemId: [itemId],
+    })
+
+    const item = response.boards[0]?.items_page?.items[0]
+    if (!item) {
+      return {
+        success: false,
+        advanceSynced: false,
+        finalSynced: false,
+        error: 'Item not found in Monday.com',
+      }
+    }
+
+    const results = await syncMondayItemToDatabase(item, 'both')
+
+    return {
+      success: true,
+      advanceSynced: !!results.advance,
+      finalSynced: !!results.final,
+    }
+  } catch (error) {
+    console.error(`Error syncing single item ${itemId}:`, error)
+    return {
+      success: false,
+      advanceSynced: false,
+      finalSynced: false,
+      error: error instanceof Error ? error.message : 'Unknown error',
+    }
   }
 }
